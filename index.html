@@ -218,6 +218,10 @@
       <input type="text" id="f-mfr" placeholder="e.g. Syngenta, Bayer">
     </div>
     <div class="field">
+      <label>Expiry Date</label>
+      <input type="text" id="f-expiry" placeholder="e.g. 15/02/2027">
+    </div>
+    <div class="field">
       <label>Toxicity Class (WHO)</label>
       <select id="f-tox">
         <option value="">— Select —</option>
@@ -274,7 +278,7 @@
       <p>Delete any existing code. Paste the script below entirely:</p>
     </div>
     <div class="code-block" id="apps-script-code">const SHEET_NAME = "Chemical_DB";
-const HEADERS = ["Timestamp","Brand Name","Active Ingredient","Formulation","Type","IRAC Group","FRAC Group","Mode of Action","PHI (days)","REI (hours)","Dosage Rate","Registered Crop","Manufacturer","Toxicity Class","Registration No.","Notes"];
+const HEADERS = ["Timestamp","Brand Name","Active Ingredient","Formulation","Type","IRAC Group","FRAC Group","Mode of Action","PHI (days)","REI (hours)","Dosage Rate","Registered Crop","Manufacturer","Toxicity Class","Registration No.","Expiry Date","Notes"];
 
 function doPost(e) {
   try {
@@ -499,7 +503,7 @@ const fieldMap = {
   "Brand Name": "f-brand", "Active Ingredient": "f-ai", "IRAC Group": "f-irac",
   "FRAC Group": "f-frac", "Mode of Action": "f-moa", "PHI (days)": "f-phi",
   "REI (hours)": "f-rei", "Dosage Rate": "f-dose", "Registered Crop": "f-crop",
-  "Manufacturer": "f-mfr", "Registration No.": "f-reg", "Notes": "f-notes"
+  "Manufacturer": "f-mfr", "Registration No.": "f-reg", "Expiry Date": "f-expiry", "Notes": "f-notes"
 };
 const selectMap = { "Formulation": "f-form", "Type": "f-type", "Toxicity Class": "f-tox" };
 
@@ -537,6 +541,7 @@ function getFormData() {
     "Manufacturer": document.getElementById("f-mfr").value.trim(),
     "Toxicity Class": document.getElementById("f-tox").value,
     "Registration No.": document.getElementById("f-reg").value.trim(),
+    "Expiry Date": document.getElementById("f-expiry").value.trim(),
     "Notes": document.getElementById("f-notes").value.trim()
   };
 }
@@ -572,7 +577,7 @@ async function saveRecord() {
 }
 
 function clearForm() {
-  ["f-brand","f-ai","f-irac","f-frac","f-moa","f-phi","f-rei","f-dose","f-crop","f-mfr","f-reg","f-notes"].forEach(id => {
+  ["f-brand","f-ai","f-irac","f-frac","f-moa","f-phi","f-rei","f-dose","f-crop","f-mfr","f-reg","f-expiry","f-notes"].forEach(id => {
     const el = document.getElementById(id); el.value = ""; el.classList.remove("extracted");
   });
   ["f-form","f-type","f-tox"].forEach(id => document.getElementById(id).value = "");
