@@ -372,13 +372,33 @@ function addFiles(files) {
   imgs.forEach(file => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const idx = uploadedPhotos.length;
-      uploadedPhotos.push({ base64: e.target.result.split(",")[1], dataUrl: e.target.result, status: "ready" });
-      renderPhotoGrid();
+      compressImage(e.target.result, (compressed) => {
+        uploadedPhotos.push({ base64: compressed.split(",")[1], dataUrl: compressed, status: "ready" });
+        renderPhotoGrid();
+      });
     };
     reader.readAsDataURL(file);
   });
   document.getElementById("file-input").value = "";
+}
+
+function compressImage(dataUrl, callback) {
+  const img = new Image();
+  img.onload = () => {
+    const MAX_W = 1600, MAX_H = 1600;
+    let w = img.width, h = img.height;
+    if (w > MAX_W || h > MAX_H) {
+      const ratio = Math.min(MAX_W / w, MAX_H / h);
+      w = Math.round(w * ratio); h = Math.round(h * ratio);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+    // Compress to JPEG quality 0.82 — balances readability vs size
+    const out = canvas.toDataURL("image/jpeg", 0.82);
+    callback(out);
+  };
+  img.src = dataUrl;
 }
 
 function renderPhotoGrid() {
