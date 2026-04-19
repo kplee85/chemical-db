@@ -385,7 +385,7 @@ function addFiles(files) {
 function compressImage(dataUrl, callback) {
   const img = new Image();
   img.onload = () => {
-    const MAX_W = 1600, MAX_H = 1600;
+    const MAX_W = 1024, MAX_H = 1024;
     let w = img.width, h = img.height;
     if (w > MAX_W || h > MAX_H) {
       const ratio = Math.min(MAX_W / w, MAX_H / h);
@@ -394,8 +394,8 @@ function compressImage(dataUrl, callback) {
     const canvas = document.createElement("canvas");
     canvas.width = w; canvas.height = h;
     canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-    // Compress to JPEG quality 0.82 — balances readability vs size
-    const out = canvas.toDataURL("image/jpeg", 0.82);
+    const out = canvas.toDataURL("image/jpeg", 0.75);
+    // Target: ~300-400KB per image after base64, well under 5MB limit
     callback(out);
   };
   img.src = dataUrl;
