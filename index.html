@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chemical DB — Farm OS</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f0; color: #1a1a1a; min-height: 100vh; }
+
+  header { background: #1a3a2a; color: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+  header span { font-size: 12px; color: #8bc4a4; margin-left: auto; }
+
+  .tabs { display: flex; background: #fff; border-bottom: 1px solid #e0e0d8; }
+  .tab { padding: 12px 20px; font-size: 13px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; color: #666; transition: all 0.15s; }
+  .tab.active { color: #1a3a2a; border-bottom-color: #1a3a2a; }
+  .tab:hover:not(.active) { background: #f5f5f0; }
+
+  .content { max-width: 760px; margin: 0 auto; padding: 20px 16px; }
+
+  /* OCR Section */
+  .upload-zone { border: 2px dashed #c8c8c0; border-radius: 10px; padding: 32px; text-align: center; background: #fff; cursor: pointer; transition: all 0.2s; }
+  .upload-zone:hover, .upload-zone.drag { border-color: #1a3a2a; background: #f0f7f3; }
+  .upload-zone input { display: none; }
+  .upload-zone .icon { font-size: 32px; margin-bottom: 8px; }
+  .upload-zone p { font-size: 13px; color: #666; }
+  .upload-zone strong { color: #1a3a2a; }
+
+  #preview-wrap { display: none; margin-top: 16px; }
+  #preview-img { max-width: 100%; max-height: 280px; border-radius: 8px; border: 1px solid #e0e0d8; }
+  .ocr-status { margin-top: 10px; font-size: 13px; color: #555; display: flex; align-items: center; gap: 8px; }
+  .spinner { width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #1a3a2a; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Form */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .field label { display: block; font-size: 12px; font-weight: 600; color: #444; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 9px 12px; border: 1px solid #d8d8d0; border-radius: 7px;
+    font-size: 14px; background: #fff; color: #1a1a1a; outline: none; transition: border 0.15s;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: #1a3a2a; }
+  .field textarea { resize: vertical; min-height: 72px; }
+
+  .field input.extracted { background: #f0f7f3; border-color: #8bc4a4; }
+
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #888; margin: 20px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #e8e8e0; grid-column: 1 / -1; }
+
+  /* Buttons */
+  .btn-row { display: flex; gap: 10px; margin-top: 24px; }
+  .btn { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+  .btn-primary { background: #1a3a2a; color: #fff; flex: 1; }
+  .btn-primary:hover { background: #264d38; }
+  .btn-primary:disabled { background: #999; cursor: not-allowed; }
+  .btn-secondary { background: #fff; color: #444; border: 1px solid #d8d8d0; }
+  .btn-secondary:hover { background: #f5f5f0; }
+  .btn-danger { background: #fff; color: #c0392b; border: 1px solid #f0b8b2; }
+  .btn-danger:hover { background: #fdf0ef; }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(60px); background: #1a3a2a; color: #fff; padding: 12px 24px; border-radius: 24px; font-size: 14px; font-weight: 500; opacity: 0; transition: all 0.3s; z-index: 999; white-space: nowrap; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { background: #c0392b; }
+
+  /* Records tab */
+  .record-card { background: #fff; border: 1px solid #e0e0d8; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+  .record-card h3 { font-size: 15px; font-weight: 600; color: #1a3a2a; margin-bottom: 4px; }
+  .record-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; background: #e8f3ec; color: #1a3a2a; }
+  .badge.irac { background: #fff3e0; color: #8a4f00; }
+  .badge.frac { background: #e8eaf6; color: #283593; }
+  .badge.phi { background: #fce4ec; color: #880e4f; }
+  .empty-state { text-align: center; padding: 40px; color: #999; font-size: 14px; }
+
+  /* Setup tab */
+  .setup-card { background: #fff; border: 1px solid #e0e0d8; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  .setup-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #1a3a2a; }
+  .code-block { background: #f5f5f0; border: 1px solid #e0e0d8; border-radius: 6px; padding: 12px 14px; font-family: monospace; font-size: 12px; color: #333; white-space: pre-wrap; word-break: break-all; }
+  .step { display: flex; gap: 12px; margin-bottom: 14px; }
+  .step-num { width: 24px; height: 24px; border-radius: 50%; background: #1a3a2a; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .step p { font-size: 13px; color: #444; line-height: 1.6; }
+  .step a { color: #1a7a4a; }
+
+  /* Config */
+  .config-row { display: flex; gap: 10px; align-items: flex-end; }
+  .config-row .field { flex: 1; }
+
+  @media (max-width: 520px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .form-grid .full { grid-column: 1; }
+    .btn-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="width:28px;height:28px;background:#2d6a4f;border-radius:6px;display:flex;align-items:center;justify-content:center;">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="#fff" stroke-width="1.5"/><path d="M8 5v3l2 1.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>
+  </div>
+  <h1>Chemical DB — Farm OS</h1>
+  <span id="header-status">Not connected</span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('entry')">Data Entry</div>
+  <div class="tab" onclick="switchTab('records')">Records (<span id="rec-count">0</span>)</div>
+  <div class="tab" onclick="switchTab('setup')">Setup</div>
+</div>
+
+<div id="tab-entry" class="content">
+
+  <!-- Upload Zone -->
+  <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="handleDrag(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+    <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)">
+    <div class="icon">📷</div>
+    <p><strong>Tap to capture / upload photo</strong></p>
+    <p style="margin-top:4px;">Snap the pesticide label — AI will extract the fields</p>
+  </div>
+
+  <div id="preview-wrap">
+    <img id="preview-img" src="" alt="Label preview">
+    <div class="ocr-status" id="ocr-status"></div>
+  </div>
+
+  <!-- Form -->
+  <div class="form-grid">
+    <div class="section-title">Product Identification</div>
+
+    <div class="field full">
+      <label>Product Brand Name *</label>
+      <input type="text" id="f-brand" placeholder="e.g. Ridomil Gold MZ">
+    </div>
+    <div class="field full">
+      <label>Active Ingredient *</label>
+      <input type="text" id="f-ai" placeholder="e.g. Metalaxyl-M 40g/L + Mancozeb 640g/L">
+    </div>
+    <div class="field">
+      <label>Formulation Type</label>
+      <select id="f-form">
+        <option value="">— Select —</option>
+        <option>WP (Wettable Powder)</option>
+        <option>EC (Emulsifiable Concentrate)</option>
+        <option>SC (Suspension Concentrate)</option>
+        <option>WG (Water Dispersible Granule)</option>
+        <option>GR (Granule)</option>
+        <option>SL (Soluble Liquid)</option>
+        <option>EW (Emulsion Water)</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Registration No. (BPPH)</label>
+      <input type="text" id="f-reg" placeholder="e.g. BPH 1234">
+    </div>
+
+    <div class="section-title">Classification</div>
+
+    <div class="field">
+      <label>Type</label>
+      <select id="f-type">
+        <option value="">— Select —</option>
+        <option>Fungicide</option>
+        <option>Insecticide</option>
+        <option>Herbicide</option>
+        <option>Bactericide</option>
+        <option>Acaricide</option>
+        <option>Nematicide</option>
+        <option>Plant Growth Regulator</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>IRAC Group</label>
+      <input type="text" id="f-irac" placeholder="e.g. Group 3A">
+    </div>
+    <div class="field">
+      <label>FRAC Group</label>
+      <input type="text" id="f-frac" placeholder="e.g. P7 / M3">
+    </div>
+    <div class="field">
+      <label>Mode of Action</label>
+      <input type="text" id="f-moa" placeholder="e.g. Systemic, contact">
+    </div>
+
+    <div class="section-title">Safety & Application</div>
+
+    <div class="field">
+      <label>PHI — Pre-Harvest Interval (days)</label>
+      <input type="number" id="f-phi" placeholder="e.g. 14" min="0">
+    </div>
+    <div class="field">
+      <label>REI — Re-Entry Interval (hours)</label>
+      <input type="number" id="f-rei" placeholder="e.g. 24" min="0">
+    </div>
+    <div class="field">
+      <label>Dosage Rate</label>
+      <input type="text" id="f-dose" placeholder="e.g. 2.5 ml/L or 500 ml/ha">
+    </div>
+    <div class="field">
+      <label>Registered Crop</label>
+      <input type="text" id="f-crop" placeholder="e.g. Durian, Paddy">
+    </div>
+    <div class="field">
+      <label>Manufacturer / Distributor</label>
+      <input type="text" id="f-mfr" placeholder="e.g. Syngenta, Bayer">
+    </div>
+    <div class="field">
+      <label>Toxicity Class (WHO)</label>
+      <select id="f-tox">
+        <option value="">— Select —</option>
+        <option>Class Ia — Extremely hazardous</option>
+        <option>Class Ib — Highly hazardous</option>
+        <option>Class II — Moderately hazardous</option>
+        <option>Class III — Slightly hazardous</option>
+        <option>Class U — Unlikely to present acute hazard</option>
+      </select>
+    </div>
+    <div class="field full">
+      <label>Notes</label>
+      <textarea id="f-notes" placeholder="Resistance notes, mixing compatibility, storage remarks..."></textarea>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-secondary" onclick="clearForm()">Clear</button>
+    <button class="btn btn-primary" id="save-btn" onclick="saveRecord()">Save to Google Sheets</button>
+  </div>
+
+</div>
+
+<div id="tab-records" class="content" style="display:none;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+    <input type="text" placeholder="Search product, ingredient..." id="search-input" oninput="renderRecords()" style="flex:1; padding:9px 12px; border:1px solid #d8d8d0; border-radius:8px; font-size:14px; outline:none; margin-right:10px;">
+    <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+  </div>
+  <div id="records-list"></div>
+</div>
+
+<div id="tab-setup" class="content" style="display:none;">
+  <div class="setup-card">
+    <h3>Google Sheets Connection</h3>
+    <div class="config-row">
+      <div class="field">
+        <label>Apps Script Web App URL</label>
+        <input type="text" id="cfg-url" placeholder="https://script.google.com/macros/s/.../exec" oninput="saveConfig()">
+      </div>
+      <button class="btn btn-secondary" onclick="testConnection()" style="height:38px; white-space:nowrap;">Test</button>
+    </div>
+    <p style="font-size:12px; color:#888; margin-top:8px;">Paste your deployed Apps Script URL above. See steps below to create it.</p>
+  </div>
+
+  <div class="setup-card">
+    <h3>How to connect Google Sheets</h3>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <p>Open your <a href="https://docs.google.com/spreadsheets/d/11x4hmB3AuTDSVK7shNrXRnNzK55XhnpN-bcVYd-bl0s" target="_blank">Chemical_DB Google Sheet</a> → Extensions → Apps Script</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <p>Delete any existing code. Paste the script below entirely:</p>
+    </div>
+    <div class="code-block" id="apps-script-code">const SHEET_NAME = "Chemical_DB";
+const HEADERS = ["Timestamp","Brand Name","Active Ingredient","Formulation","Type","IRAC Group","FRAC Group","Mode of Action","PHI (days)","REI (hours)","Dosage Rate","Registered Crop","Manufacturer","Toxicity Class","Registration No.","Notes"];
+
+function doPost(e) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
+    if (sheet.getLastRow() === 0) sheet.appendRow(HEADERS);
+    const data = JSON.parse(e.postData.contents);
+    const row = HEADERS.map(h => data[h] || "");
+    sheet.appendRow(row);
+    return ContentService.createTextOutput(JSON.stringify({status:"ok"})).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({status:"error",message:err.toString()})).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({status:"ok",message:"Chemical DB API running"})).setMimeType(ContentService.MimeType.JSON);
+}
+</div>
+    <button class="btn btn-secondary" style="margin-top:10px; font-size:12px;" onclick="copyScript()">Copy Script</button>
+
+    <div class="step" style="margin-top:16px;">
+      <div class="step-num">3</div>
+      <p>Click <strong>Deploy → New deployment</strong>. Type: <strong>Web app</strong>. Execute as: <strong>Me</strong>. Access: <strong>Anyone</strong>. Click Deploy.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <p>Copy the Web App URL and paste it in the field above. Click Test to verify.</p>
+    </div>
+  </div>
+
+  <div class="setup-card">
+    <h3>AI (OCR) API Key</h3>
+    <div class="field">
+      <label>Anthropic API Key</label>
+      <input type="password" id="cfg-apikey" placeholder="sk-ant-..." oninput="saveConfig()">
+    </div>
+    <p style="font-size:12px; color:#888; margin-top:8px;">Used for photo label extraction. Stored locally in your browser only, never sent anywhere except api.anthropic.com.</p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const SHEET_ID = "11x4hmB3AuTDSVK7shNrXRnNzK55XhnpN-bcVYd-bl0s";
+let records = JSON.parse(localStorage.getItem("chem_db_records") || "[]");
+let config = JSON.parse(localStorage.getItem("chem_db_config") || '{"url":"","apikey":""}');
+
+function init() {
+  document.getElementById("cfg-url").value = config.url || "";
+  document.getElementById("cfg-apikey").value = config.apikey || "";
+  updateHeaderStatus();
+  renderRecords();
+  document.getElementById("rec-count").textContent = records.length;
+}
+
+function saveConfig() {
+  config.url = document.getElementById("cfg-url").value.trim();
+  config.apikey = document.getElementById("cfg-apikey").value.trim();
+  localStorage.setItem("chem_db_config", JSON.stringify(config));
+  updateHeaderStatus();
+}
+
+function updateHeaderStatus() {
+  const el = document.getElementById("header-status");
+  if (config.url) { el.textContent = "Sheets connected"; el.style.color = "#8bc4a4"; }
+  else { el.textContent = "Not connected"; el.style.color = "#f9a8a8"; }
+}
+
+function switchTab(t) {
+  ["entry","records","setup"].forEach(id => {
+    document.getElementById("tab-"+id).style.display = id === t ? "block" : "none";
+  });
+  document.querySelectorAll(".tab").forEach((el,i) => {
+    el.classList.toggle("active", ["entry","records","setup"][i] === t);
+  });
+  if (t === "records") renderRecords();
+}
+
+function handleDrag(e) { e.preventDefault(); document.getElementById("drop-zone").classList.add("drag"); }
+function handleDragLeave(e) { document.getElementById("drop-zone").classList.remove("drag"); }
+function handleDrop(e) { e.preventDefault(); document.getElementById("drop-zone").classList.remove("drag"); if(e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); }
+function handleFile(e) { if(e.target.files[0]) processFile(e.target.files[0]); }
+
+function processFile(file) {
+  if (!file.type.startsWith("image/")) { showToast("Please upload an image file", true); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const wrap = document.getElementById("preview-wrap");
+    document.getElementById("preview-img").src = e.target.result;
+    wrap.style.display = "block";
+    runOCR(e.target.result.split(",")[1]);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function runOCR(base64) {
+  const status = document.getElementById("ocr-status");
+  if (!config.apikey) {
+    status.innerHTML = '<span style="color:#c0392b;">⚠ No API key set. Go to Setup tab to add your Anthropic API key.</span>';
+    return;
+  }
+  status.innerHTML = '<span class="spinner"></span> Extracting label information...';
+
+  const prompt = `You are extracting pesticide/fungicide label data for a farm database. Analyze this label image and extract ALL visible information.
+
+Return ONLY a valid JSON object with these exact keys (use empty string if not found):
+{
+  "Brand Name": "",
+  "Active Ingredient": "",
+  "Formulation": "",
+  "Type": "",
+  "IRAC Group": "",
+  "FRAC Group": "",
+  "Mode of Action": "",
+  "PHI (days)": "",
+  "REI (hours)": "",
+  "Dosage Rate": "",
+  "Registered Crop": "",
+  "Manufacturer": "",
+  "Toxicity Class": "",
+  "Registration No.": "",
+  "Notes": ""
+}
+
+For Type: use one of: Fungicide, Insecticide, Herbicide, Bactericide, Acaricide, Nematicide, Plant Growth Regulator, Other
+For IRAC Group: format as "Group X" or "Group XA" etc.
+For FRAC Group: format as code like "P7", "M3", "11" etc.
+Return ONLY the JSON, no explanation.`;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": config.apikey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 800,
+        messages: [{ role: "user", content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
+          { type: "text", text: prompt }
+        ]}]
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    const text = data.content[0].text.trim();
+    const json = JSON.parse(text.replace(/```json|```/g, "").trim());
+    populateForm(json);
+    status.innerHTML = '<span style="color:#1a7a4a;">✓ Extracted — review and correct before saving</span>';
+  } catch(err) {
+    status.innerHTML = `<span style="color:#c0392b;">⚠ Extraction failed: ${err.message}. Fill manually.</span>`;
+  }
+}
+
+const fieldMap = {
+  "Brand Name": "f-brand", "Active Ingredient": "f-ai", "IRAC Group": "f-irac",
+  "FRAC Group": "f-frac", "Mode of Action": "f-moa", "PHI (days)": "f-phi",
+  "REI (hours)": "f-rei", "Dosage Rate": "f-dose", "Registered Crop": "f-crop",
+  "Manufacturer": "f-mfr", "Registration No.": "f-reg", "Notes": "f-notes"
+};
+const selectMap = { "Formulation": "f-form", "Type": "f-type", "Toxicity Class": "f-tox" };
+
+function populateForm(data) {
+  Object.entries(fieldMap).forEach(([key, id]) => {
+    const el = document.getElementById(id);
+    if (data[key]) { el.value = data[key]; el.classList.add("extracted"); }
+  });
+  Object.entries(selectMap).forEach(([key, id]) => {
+    const el = document.getElementById(id);
+    if (data[key]) {
+      for (let opt of el.options) {
+        if (opt.text.toLowerCase().includes(data[key].toLowerCase()) || opt.value.toLowerCase().includes(data[key].toLowerCase())) {
+          el.value = opt.value; break;
+        }
+      }
+    }
+  });
+}
+
+function getFormData() {
+  return {
+    "Timestamp": new Date().toISOString().replace("T"," ").substring(0,19),
+    "Brand Name": document.getElementById("f-brand").value.trim(),
+    "Active Ingredient": document.getElementById("f-ai").value.trim(),
+    "Formulation": document.getElementById("f-form").value,
+    "Type": document.getElementById("f-type").value,
+    "IRAC Group": document.getElementById("f-irac").value.trim(),
+    "FRAC Group": document.getElementById("f-frac").value.trim(),
+    "Mode of Action": document.getElementById("f-moa").value.trim(),
+    "PHI (days)": document.getElementById("f-phi").value,
+    "REI (hours)": document.getElementById("f-rei").value,
+    "Dosage Rate": document.getElementById("f-dose").value.trim(),
+    "Registered Crop": document.getElementById("f-crop").value.trim(),
+    "Manufacturer": document.getElementById("f-mfr").value.trim(),
+    "Toxicity Class": document.getElementById("f-tox").value,
+    "Registration No.": document.getElementById("f-reg").value.trim(),
+    "Notes": document.getElementById("f-notes").value.trim()
+  };
+}
+
+async function saveRecord() {
+  const data = getFormData();
+  if (!data["Brand Name"]) { showToast("Brand name is required", true); return; }
+
+  const btn = document.getElementById("save-btn");
+  btn.disabled = true; btn.textContent = "Saving...";
+
+  records.push(data);
+  localStorage.setItem("chem_db_records", JSON.stringify(records));
+  document.getElementById("rec-count").textContent = records.length;
+
+  if (config.url) {
+    try {
+      await fetch(config.url, {
+        method: "POST", mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      showToast("Saved to Google Sheets ✓");
+    } catch(err) {
+      showToast("Saved locally — Sheets sync failed", true);
+    }
+  } else {
+    showToast("Saved locally (no Sheets URL configured)");
+  }
+
+  btn.disabled = false; btn.textContent = "Save to Google Sheets";
+  clearForm();
+}
+
+function clearForm() {
+  ["f-brand","f-ai","f-irac","f-frac","f-moa","f-phi","f-rei","f-dose","f-crop","f-mfr","f-reg","f-notes"].forEach(id => {
+    const el = document.getElementById(id); el.value = ""; el.classList.remove("extracted");
+  });
+  ["f-form","f-type","f-tox"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("preview-wrap").style.display = "none";
+  document.getElementById("preview-img").src = "";
+  document.getElementById("ocr-status").innerHTML = "";
+  document.getElementById("file-input").value = "";
+}
+
+function renderRecords() {
+  const q = (document.getElementById("search-input")?.value || "").toLowerCase();
+  const list = document.getElementById("records-list");
+  const filtered = records.filter(r =>
+    (r["Brand Name"]||"").toLowerCase().includes(q) ||
+    (r["Active Ingredient"]||"").toLowerCase().includes(q) ||
+    (r["Type"]||"").toLowerCase().includes(q)
+  );
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-state">No records yet. Add your first product in Data Entry.</div>';
+    return;
+  }
+  list.innerHTML = filtered.slice().reverse().map((r,i) => `
+    <div class="record-card">
+      <h3>${r["Brand Name"] || "—"}</h3>
+      <div style="font-size:13px; color:#555; margin-top:2px;">${r["Active Ingredient"] || "—"}</div>
+      <div class="record-meta">
+        ${r["Type"] ? `<span class="badge">${r["Type"]}</span>` : ""}
+        ${r["IRAC Group"] ? `<span class="badge irac">IRAC ${r["IRAC Group"]}</span>` : ""}
+        ${r["FRAC Group"] ? `<span class="badge frac">FRAC ${r["FRAC Group"]}</span>` : ""}
+        ${r["PHI (days)"] ? `<span class="badge phi">PHI ${r["PHI (days)"]}d</span>` : ""}
+        ${r["REI (hours)"] ? `<span class="badge">REI ${r["REI (hours)"]}h</span>` : ""}
+        ${r["Formulation"] ? `<span class="badge">${r["Formulation"].split(" ")[0]}</span>` : ""}
+      </div>
+      <div style="font-size:11px; color:#aaa; margin-top:8px;">${r["Timestamp"] || ""} · ${r["Manufacturer"] || ""} · ${r["Registration No."] || ""}</div>
+    </div>
+  `).join("");
+}
+
+function exportCSV() {
+  if (!records.length) { showToast("No records to export", true); return; }
+  const headers = ["Timestamp","Brand Name","Active Ingredient","Formulation","Type","IRAC Group","FRAC Group","Mode of Action","PHI (days)","REI (hours)","Dosage Rate","Registered Crop","Manufacturer","Toxicity Class","Registration No.","Notes"];
+  const rows = [headers, ...records.map(r => headers.map(h => `"${(r[h]||"").replace(/"/g,'""')}"` ))];
+  const csv = rows.map(r => r.join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+  a.download = `Chemical_DB_${new Date().toISOString().substring(0,10)}.csv`;
+  a.click();
+}
+
+async function testConnection() {
+  if (!config.url) { showToast("Enter Apps Script URL first", true); return; }
+  try {
+    await fetch(config.url, { mode: "no-cors" });
+    showToast("Connection OK ✓");
+  } catch(e) { showToast("Connection failed — check URL", true); }
+}
+
+function copyScript() {
+  navigator.clipboard.writeText(document.getElementById("apps-script-code").textContent);
+  showToast("Script copied ✓");
+}
+
+function showToast(msg, isError = false) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = isError ? "show error" : "show";
+  setTimeout(() => t.className = "", 3000);
+}
+
+init();
+</script>
+</body>
+</html>
