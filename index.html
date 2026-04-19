@@ -311,11 +311,11 @@ function doGet(e) {
     <div class="config-row">
       <div class="field">
         <label>Proxy URL</label>
-        <input type="text" id="cfg-proxy" placeholder="http://192.168.0.111:7821" oninput="saveConfig()">
+        <input type="text" id="cfg-proxy" placeholder="https://verdex.erozxcloud.web.id:8081" oninput="saveConfig()">
       </div>
       <button class="btn btn-secondary" onclick="testProxy()" style="height:38px; white-space:nowrap;">Test</button>
     </div>
-    <p style="font-size:12px; color:#888; margin-top:8px;">The OCR proxy runs on FNNAS and calls the Anthropic API server-side. Default: <code>http://192.168.0.111:7821</code>. API key is stored on FNNAS only, never in the browser.</p>
+    <p style="font-size:12px; color:#888; margin-top:8px;">The OCR proxy runs on FNNAS and calls the Anthropic API server-side. Default: <code>https://verdex.erozxcloud.web.id:8081</code>. API key is stored on FNNAS only, never in the browser.</p>
   </div>
 </div>
 
@@ -329,7 +329,7 @@ let config = JSON.parse(localStorage.getItem("chem_db_config") || '{"url":"","ap
 function init() {
   document.getElementById("cfg-url").value = config.url || "";
   const proxyEl = document.getElementById("cfg-proxy");
-  if (proxyEl) proxyEl.value = config.proxyUrl || "http://192.168.0.111:7821";
+  if (proxyEl) proxyEl.value = config.proxyUrl || "https://verdex.erozxcloud.web.id:8081";
   updateHeaderStatus();
   renderRecords();
   document.getElementById("rec-count").textContent = records.length;
@@ -429,7 +429,7 @@ function clearPhotos() {
 
 async function runOCRAll() {
   if (!uploadedPhotos.length) { showToast("No photos uploaded", true); return; }
-  const proxyUrl = (config.proxyUrl || "http://192.168.0.111:7821").replace(/\/$/, "");
+  const proxyUrl = (config.proxyUrl || "https://verdex.erozxcloud.web.id:8081").replace(/\/$/, "");
 
   const btn = document.getElementById("extract-btn");
   btn.disabled = true;
@@ -623,7 +623,7 @@ function exportCSV() {
 }
 
 async function testProxy() {
-  const proxyUrl = (config.proxyUrl || "http://192.168.0.111:7821").replace(/\/$/, "");
+  const proxyUrl = (config.proxyUrl || "https://verdex.erozxcloud.web.id:8081").replace(/\/$/, "");
   try {
     const res = await fetch(`${proxyUrl}/`);
     const data = await res.json();
