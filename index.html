@@ -307,12 +307,15 @@ function doGet(e) {
   </div>
 
   <div class="setup-card">
-    <h3>AI (OCR) API Key</h3>
-    <div class="field">
-      <label>Anthropic API Key</label>
-      <input type="password" id="cfg-apikey" placeholder="sk-ant-..." oninput="saveConfig()">
+    <h3>OCR Proxy (FNNAS)</h3>
+    <div class="config-row">
+      <div class="field">
+        <label>Proxy URL</label>
+        <input type="text" id="cfg-proxy" placeholder="http://192.168.0.111:7821" oninput="saveConfig()">
+      </div>
+      <button class="btn btn-secondary" onclick="testProxy()" style="height:38px; white-space:nowrap;">Test</button>
     </div>
-    <p style="font-size:12px; color:#888; margin-top:8px;">Used for photo label extraction. Stored locally in your browser only, never sent anywhere except api.anthropic.com.</p>
+    <p style="font-size:12px; color:#888; margin-top:8px;">The OCR proxy runs on FNNAS and calls the Anthropic API server-side. Default: <code>http://192.168.0.111:7821</code>. API key is stored on FNNAS only, never in the browser.</p>
   </div>
 </div>
 
@@ -325,7 +328,8 @@ let config = JSON.parse(localStorage.getItem("chem_db_config") || '{"url":"","ap
 
 function init() {
   document.getElementById("cfg-url").value = config.url || "";
-  document.getElementById("cfg-apikey").value = config.apikey || "";
+  const proxyEl = document.getElementById("cfg-proxy");
+  if (proxyEl) proxyEl.value = config.proxyUrl || "http://192.168.0.111:7821";
   updateHeaderStatus();
   renderRecords();
   document.getElementById("rec-count").textContent = records.length;
@@ -333,7 +337,8 @@ function init() {
 
 function saveConfig() {
   config.url = document.getElementById("cfg-url").value.trim();
-  config.apikey = document.getElementById("cfg-apikey").value.trim();
+  const proxyEl = document.getElementById("cfg-proxy");
+  if (proxyEl) config.proxyUrl = proxyEl.value.trim();
   localStorage.setItem("chem_db_config", JSON.stringify(config));
   updateHeaderStatus();
 }
@@ -403,10 +408,8 @@ function clearPhotos() {
 }
 
 async function runOCRAll() {
-  if (!config.apikey) {
-    showToast("No API key — go to Setup tab", true); return;
-  }
   if (!uploadedPhotos.length) { showToast("No photos uploaded", true); return; }
+  const proxyUrl = (config.proxyUrl || "http://192.168.0.111:7821").replace(/\/$/, "");
 
   const btn = document.getElementById("extract-btn");
   btn.disabled = true;
@@ -452,20 +455,15 @@ Rules:
 - Return ONLY the JSON, no explanation.`;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch(`${proxyUrl}/extract`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": config.apikey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1000,
-        messages: [{ role: "user", content: [...allImages, { type: "text", text: prompt }] }]
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ images: uploadedPhotos.map(p => p.base64) })
     });
+    if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
     const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
-    const text = data.content[0].text.trim();
-    const json = JSON.parse(text.replace(/```json|```/g, "").trim());
-    populateForm(json);
+    if (data.status !== "ok") throw new Error(data.error || "Proxy returned error");
+    populateForm(data.data);
     uploadedPhotos.forEach(p => p.status = "ok");
     renderPhotoGrid();
     document.getElementById("ocr-status").innerHTML = '<span style="color:#1a7a4a;">✓ Extracted from ' + uploadedPhotos.length + ' photo(s) — review before saving</span>';
@@ -602,6 +600,15 @@ function exportCSV() {
   a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
   a.download = `Chemical_DB_${new Date().toISOString().substring(0,10)}.csv`;
   a.click();
+}
+
+async function testProxy() {
+  const proxyUrl = (config.proxyUrl || "http://192.168.0.111:7821").replace(/\/$/, "");
+  try {
+    const res = await fetch(`${proxyUrl}/`);
+    const data = await res.json();
+    showToast(`Proxy OK — ${data.service || "running"} ✓`);
+  } catch(e) { showToast("Proxy unreachable — is it running on FNNAS?", true); }
 }
 
 async function testConnection() {
