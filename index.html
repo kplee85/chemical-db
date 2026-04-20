@@ -628,7 +628,7 @@ async function saveRecord() {
 
   if (config.url) {
     try {
-      const res = await fetch(config.url, {
+      const res = await fetch(`${(config.proxyUrl||"").replace(/\/$/,"")}/sheets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({action: "create", data})
@@ -690,7 +690,7 @@ async function deleteRecord(i) {
   renderRecords();
   if (config.url && rec._rowIndex) {
     try {
-      await fetch(config.url, {
+      await fetch(`${(config.proxyUrl||"").replace(/\/$/,"")}/sheets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({action: "delete", rowIndex: rec._rowIndex})
@@ -730,7 +730,7 @@ async function updateRecord(i) {
   document.getElementById("rec-count").textContent = records.length;
   if (config.url && oldRowIndex) {
     try {
-      await fetch(config.url, {
+      await fetch(`${(config.proxyUrl||"").replace(/\/$/,"")}/sheets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({action: "update", rowIndex: oldRowIndex, data})
