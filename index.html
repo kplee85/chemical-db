@@ -120,11 +120,17 @@
 <div id="tab-entry" class="content">
 
   <!-- Upload Zone -->
-  <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="handleDrag(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
-    <input type="file" id="file-input" accept="image/*" multiple onchange="handleFiles(event)">
+  <input type="file" id="file-input" accept="image/*" multiple onchange="handleFiles(event)" style="display:none">
+  <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="handleFiles(event)" style="display:none">
+
+  <div class="upload-zone" id="drop-zone" ondragover="handleDrag(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
     <div class="icon">📷</div>
-    <p><strong>Tap to upload label photos</strong></p>
-    <p style="margin-top:4px;">Multiple photos allowed — front + back of label</p>
+    <p><strong>Add label photos</strong></p>
+    <div style="display:flex; gap:10px; justify-content:center; margin-top:12px; flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="document.getElementById('camera-input').click()" style="flex:none; padding:9px 20px; font-size:13px;">📸 Take Photo</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()" style="flex:none; padding:9px 20px; font-size:13px;">🖼 Choose from Gallery</button>
+    </div>
+    <p style="margin-top:10px; font-size:12px; color:#999;">Multiple photos allowed — front + back of label</p>
   </div>
 
   <div id="photo-grid" class="photo-grid"></div>
