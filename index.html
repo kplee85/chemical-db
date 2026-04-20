@@ -268,9 +268,12 @@
 </div>
 
 <div id="tab-records" class="content" style="display:none;">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-    <input type="text" placeholder="Search product, ingredient..." id="search-input" oninput="renderRecords()" style="flex:1; padding:9px 12px; border:1px solid #d8d8d0; border-radius:8px; font-size:14px; outline:none; margin-right:10px;">
-    <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+  <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+    <button class="btn btn-primary" id="sync-btn" onclick="syncFromSheets()" style="white-space:nowrap;">Sync from Sheets</button>
+    <button class="btn btn-secondary" onclick="exportCSV()" style="white-space:nowrap;">Export CSV</button>
+  </div>
+  <div style="margin-bottom:12px;">
+    <input type="text" placeholder="Search product, ingredient..." id="search-input" oninput="renderRecords()" style="width:100%; padding:9px 12px; border:1px solid #d8d8d0; border-radius:8px; font-size:14px; outline:none;">
   </div>
   <div id="records-list"></div>
 </div>
@@ -302,22 +305,66 @@
     <div class="code-block" id="apps-script-code">const SHEET_NAME = "Chemical_DB";
 const HEADERS = ["Timestamp","Brand Name","Active Ingredient","Formulation","Type","IRAC Group","FRAC Group","Mode of Action","PHI (days)","REI (hours)","Dosage Rate","Registered Crop","Manufacturer","Toxicity Class","Registration No.","Expiry Date","Notes"];
 
+function getSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
+  if (sheet.getLastRow() === 0) sheet.appendRow(HEADERS);
+  return sheet;
+}
+
 function doPost(e) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
-    if (sheet.getLastRow() === 0) sheet.appendRow(HEADERS);
-    const data = JSON.parse(e.postData.contents);
-    const row = HEADERS.map(h => data[h] || "");
-    sheet.appendRow(row);
-    return ContentService.createTextOutput(JSON.stringify({status:"ok"})).setMimeType(ContentService.MimeType.JSON);
-  } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({status:"error",message:err.toString()})).setMimeType(ContentService.MimeType.JSON);
-  }
+    const payload = JSON.parse(e.postData.contents);
+    const sheet = getSheet();
+    const action = payload.action || "create";
+
+    if (action === "create") {
+      const row = HEADERS.map(h => payload.data[h] || "");
+      sheet.appendRow(row);
+      return ok({rowIndex: sheet.getLastRow()});
+    }
+
+    if (action === "update") {
+      const rowIndex = payload.rowIndex;
+      const row = HEADERS.map(h => payload.data[h] || "");
+      sheet.getRange(rowIndex, 1, 1, HEADERS.length).setValues([row]);
+      return ok({rowIndex});
+    }
+
+    if (action === "delete") {
+      sheet.deleteRow(payload.rowIndex);
+      return ok({deleted: payload.rowIndex});
+    }
+
+    return err("Unknown action: " + action);
+  } catch(e) { return err(e.toString()); }
 }
 
 function doGet(e) {
-  return ContentService.createTextOutput(JSON.stringify({status:"ok",message:"Chemical DB API running"})).setMimeType(ContentService.MimeType.JSON);
+  try {
+    const action = e.parameter.action || "health";
+    if (action === "health") return ok({message: "Chemical DB API running"});
+    if (action === "list") {
+      const sheet = getSheet();
+      const lastRow = sheet.getLastRow();
+      if (lastRow <= 1) return ok({records: [], total: 0});
+      const values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+      const records = values.map((row, i) => {
+        const rec = {_rowIndex: i + 2};
+        HEADERS.forEach((h, j) => rec[h] = row[j]);
+        return rec;
+      });
+      return ok({records, total: records.length});
+    }
+    return err("Unknown action");
+  } catch(e) { return err(e.toString()); }
+}
+
+function ok(data) {
+  return ContentService.createTextOutput(JSON.stringify({status:"ok",...data})).setMimeType(ContentService.MimeType.JSON);
+}
+function err(msg) {
+  return ContentService.createTextOutput(JSON.stringify({status:"error",message:msg})).setMimeType(ContentService.MimeType.JSON);
 }
 </div>
     <button class="btn btn-secondary" style="margin-top:10px; font-size:12px;" onclick="copyScript()">Copy Script</button>
@@ -581,11 +628,15 @@ async function saveRecord() {
 
   if (config.url) {
     try {
-      await fetch(config.url, {
-        method: "POST", mode: "no-cors",
+      const res = await fetch(config.url, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
+        body: JSON.stringify({action: "create", data})
       });
+      const result = await res.json();
+      if (result.rowIndex) data._rowIndex = result.rowIndex;
+      records[records.length - 1] = data;
+      localStorage.setItem("chem_db_records", JSON.stringify(records));
       showToast("Saved to Google Sheets ✓");
     } catch(err) {
       showToast("Saved locally — Sheets sync failed", true);
@@ -609,6 +660,92 @@ function clearForm() {
   document.getElementById("file-input").value = "";
 }
 
+async function syncFromSheets() {
+  if (!config.url) { showToast("No Sheets URL configured", true); return; }
+  const btn = document.getElementById("sync-btn");
+  btn.disabled = true; btn.textContent = "Syncing...";
+  try {
+    const res = await fetch(`${config.url}?action=list`);
+    const data = await res.json();
+    if (data.status !== "ok") throw new Error(data.message);
+    records = data.records;
+    localStorage.setItem("chem_db_records", JSON.stringify(records));
+    document.getElementById("rec-count").textContent = records.length;
+    renderRecords();
+    showToast(`Synced ${records.length} records from Sheets ✓`);
+  } catch(err) {
+    showToast("Sync failed: " + err.message, true);
+  }
+  btn.disabled = false; btn.textContent = "Sync from Sheets";
+}
+
+async function deleteRecord(i) {
+  const rec = records[i];
+  if (!confirm(`Delete "${rec["Brand Name"]}"? This cannot be undone.`)) return;
+  records.splice(i, 1);
+  localStorage.setItem("chem_db_records", JSON.stringify(records));
+  document.getElementById("rec-count").textContent = records.length;
+  renderRecords();
+  if (config.url && rec._rowIndex) {
+    try {
+      await fetch(config.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({action: "delete", rowIndex: rec._rowIndex})
+      });
+      showToast("Deleted from Sheets ✓");
+    } catch(err) {
+      showToast("Deleted locally — Sheets sync failed", true);
+    }
+  } else {
+    showToast("Deleted locally");
+  }
+}
+
+function editRecord(i) {
+  const rec = records[i];
+  switchTab("entry");
+  // Populate form with existing record
+  const fm = {"Brand Name":"f-brand","Active Ingredient":"f-ai","IRAC Group":"f-irac","FRAC Group":"f-frac","Mode of Action":"f-moa","PHI (days)":"f-phi","REI (hours)":"f-rei","Dosage Rate":"f-dose","Registered Crop":"f-crop","Manufacturer":"f-mfr","Registration No.":"f-reg","Expiry Date":"f-expiry","Notes":"f-notes"};
+  const sm = {"Formulation":"f-form","Type":"f-type","Toxicity Class":"f-tox"};
+  Object.entries(fm).forEach(([k,id]) => { const el = document.getElementById(id); if(el) el.value = rec[k] || ""; });
+  Object.entries(sm).forEach(([k,id]) => { const el = document.getElementById(id); if(el) el.value = rec[k] || ""; });
+  // Switch save button to update mode
+  const btn = document.getElementById("save-btn");
+  btn.textContent = "Update Record";
+  btn.onclick = () => updateRecord(i);
+}
+
+async function updateRecord(i) {
+  const data = getFormData();
+  if (!data["Brand Name"]) { showToast("Brand name is required", true); return; }
+  const btn = document.getElementById("save-btn");
+  btn.disabled = true; btn.textContent = "Updating...";
+  const oldRowIndex = records[i]._rowIndex;
+  data._rowIndex = oldRowIndex;
+  records[i] = data;
+  localStorage.setItem("chem_db_records", JSON.stringify(records));
+  document.getElementById("rec-count").textContent = records.length;
+  if (config.url && oldRowIndex) {
+    try {
+      await fetch(config.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({action: "update", rowIndex: oldRowIndex, data})
+      });
+      showToast("Updated in Sheets ✓");
+    } catch(err) {
+      showToast("Updated locally — Sheets sync failed", true);
+    }
+  } else {
+    showToast("Updated locally");
+  }
+  // Reset save button
+  btn.disabled = false; btn.textContent = "Save to Google Sheets";
+  btn.onclick = saveRecord;
+  clearForm();
+}
+
 function renderRecords() {
   const q = (document.getElementById("search-input")?.value || "").toLowerCase();
   const list = document.getElementById("records-list");
@@ -621,10 +758,21 @@ function renderRecords() {
     list.innerHTML = '<div class="empty-state">No records yet. Add your first product in Data Entry.</div>';
     return;
   }
-  list.innerHTML = filtered.slice().reverse().map((r,i) => `
+  const reversedFiltered = filtered.slice().reverse();
+  list.innerHTML = reversedFiltered.map((r) => {
+    const origIdx = records.indexOf(r);
+    return `
     <div class="record-card">
-      <h3>${r["Brand Name"] || "—"}</h3>
-      <div style="font-size:13px; color:#555; margin-top:2px;">${r["Active Ingredient"] || "—"}</div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+        <div style="flex:1; min-width:0;">
+          <h3>${r["Brand Name"] || "—"}</h3>
+          <div style="font-size:13px; color:#555; margin-top:2px;">${r["Active Ingredient"] || "—"}</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          <button onclick="editRecord(${origIdx})" style="font-size:11px; padding:4px 10px; border:1px solid #d8d8d0; border-radius:6px; background:#fff; cursor:pointer; color:#444;">Edit</button>
+          <button onclick="deleteRecord(${origIdx})" style="font-size:11px; padding:4px 10px; border:1px solid #f0b8b2; border-radius:6px; background:#fff; cursor:pointer; color:#c0392b;">Delete</button>
+        </div>
+      </div>
       <div class="record-meta">
         ${r["Type"] ? `<span class="badge">${r["Type"]}</span>` : ""}
         ${r["IRAC Group"] ? `<span class="badge irac">IRAC ${r["IRAC Group"]}</span>` : ""}
@@ -632,10 +780,12 @@ function renderRecords() {
         ${r["PHI (days)"] ? `<span class="badge phi">PHI ${r["PHI (days)"]}d</span>` : ""}
         ${r["REI (hours)"] ? `<span class="badge">REI ${r["REI (hours)"]}h</span>` : ""}
         ${r["Formulation"] ? `<span class="badge">${r["Formulation"].split(" ")[0]}</span>` : ""}
+        ${r["Expiry Date"] ? `<span class="badge" style="background:#fff8e1;color:#7a5c00;">Exp ${r["Expiry Date"]}</span>` : ""}
       </div>
       <div style="font-size:11px; color:#aaa; margin-top:8px;">${r["Timestamp"] || ""} · ${r["Manufacturer"] || ""} · ${r["Registration No."] || ""}</div>
+      ${r["Notes"] ? `<div style="font-size:12px; color:#666; margin-top:6px; border-top:1px solid #f0f0e8; padding-top:6px;">${r["Notes"]}</div>` : ""}
     </div>
-  `).join("");
+  `}).join("");
 }
 
 function exportCSV() {
