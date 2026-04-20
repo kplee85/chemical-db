@@ -113,7 +113,7 @@
 
 <div class="tabs">
   <div class="tab active" onclick="switchTab('entry')">Data Entry</div>
-  <div class="tab" onclick="switchTab('records')">Records (<span id="rec-count">0</span>)</div>
+  <div class="tab" onclick="switchTab('records')">Records (<span id="rec-count">0</span>) <span id="pending-badge" style="display:none;background:#c0392b;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:2px;">!</span></div>
   <div class="tab" onclick="switchTab('setup')">Setup</div>
 </div>
 
@@ -270,6 +270,7 @@
 <div id="tab-records" class="content" style="display:none;">
   <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
     <button class="btn btn-primary" id="sync-btn" onclick="syncFromSheets()" style="white-space:nowrap;">Sync from Sheets</button>
+    <button class="btn btn-secondary" id="push-btn" onclick="pushPending()" style="white-space:nowrap;">Push Pending</button>
     <button class="btn btn-secondary" onclick="exportCSV()" style="white-space:nowrap;">Export CSV</button>
   </div>
   <div style="margin-bottom:12px;">
@@ -404,6 +405,7 @@ function init() {
   const proxyEl = document.getElementById("cfg-proxy");
   if (proxyEl) proxyEl.value = config.proxyUrl || "";
   updateHeaderStatus();
+  updatePendingBadge();
   renderRecords();
   document.getElementById("rec-count").textContent = records.length;
 }
@@ -639,10 +641,12 @@ async function saveRecord() {
       localStorage.setItem("chem_db_records", JSON.stringify(records));
       showToast("Saved to Google Sheets ✓");
     } catch(err) {
-      showToast("Saved locally — Sheets sync failed", true);
+      addPending({action: "create", data});
+      showToast("Saved locally — will sync when online", true);
     }
   } else {
-    showToast("Saved locally (no Sheets URL configured)");
+    addPending({action: "create", data});
+    showToast("Saved locally (no proxy configured)");
   }
 
   btn.disabled = false; btn.textContent = "Save to Google Sheets";
@@ -658,6 +662,51 @@ function clearForm() {
   renderPhotoGrid();
   document.getElementById("ocr-status").innerHTML = "";
   document.getElementById("file-input").value = "";
+}
+
+function getPending() { return JSON.parse(localStorage.getItem("chem_db_pending") || "[]"); }
+function addPending(op) {
+  const pending = getPending();
+  pending.push({...op, _queuedAt: new Date().toISOString()});
+  localStorage.setItem("chem_db_pending", JSON.stringify(pending));
+  updatePendingBadge();
+}
+function updatePendingBadge() {
+  const pending = getPending();
+  const badge = document.getElementById("pending-badge");
+  if (badge) badge.style.display = pending.length ? "inline" : "none";
+}
+
+async function pushPending() {
+  const pending = getPending();
+  if (!pending.length) { showToast("No pending operations"); return; }
+  const proxyUrl = (config.proxyUrl || "").replace(/\/$/, "");
+  if (!proxyUrl) { showToast("No proxy URL configured", true); return; }
+  const btn = document.getElementById("push-btn");
+  btn.disabled = true; btn.textContent = `Pushing ${pending.length}...`;
+  let success = 0, failed = 0;
+  const remaining = [];
+  for (const op of pending) {
+    try {
+      const {_queuedAt, ...payload} = op;
+      const res = await fetch(`${proxyUrl}/sheets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      success++;
+    } catch(err) {
+      failed++;
+      remaining.push(op);
+    }
+  }
+  localStorage.setItem("chem_db_pending", JSON.stringify(remaining));
+  updatePendingBadge();
+  btn.disabled = false; btn.textContent = "Push Pending";
+  if (failed === 0) showToast(`${success} operation(s) synced to Sheets ✓`);
+  else showToast(`${success} synced, ${failed} still failed`, true);
+  if (success > 0) await syncFromSheets();
 }
 
 async function syncFromSheets() {
@@ -688,7 +737,7 @@ async function deleteRecord(i) {
   localStorage.setItem("chem_db_records", JSON.stringify(records));
   document.getElementById("rec-count").textContent = records.length;
   renderRecords();
-  if (config.url && rec._rowIndex) {
+  if (config.proxyUrl && rec._rowIndex) {
     try {
       await fetch(`${(config.proxyUrl||"").replace(/\/$/,"")}/sheets`, {
         method: "POST",
@@ -697,9 +746,11 @@ async function deleteRecord(i) {
       });
       showToast("Deleted from Sheets ✓");
     } catch(err) {
-      showToast("Deleted locally — Sheets sync failed", true);
+      addPending({action: "delete", rowIndex: rec._rowIndex});
+      showToast("Deleted locally — will sync when online", true);
     }
   } else {
+    if (rec._rowIndex) addPending({action: "delete", rowIndex: rec._rowIndex});
     showToast("Deleted locally");
   }
 }
@@ -728,7 +779,7 @@ async function updateRecord(i) {
   records[i] = data;
   localStorage.setItem("chem_db_records", JSON.stringify(records));
   document.getElementById("rec-count").textContent = records.length;
-  if (config.url && oldRowIndex) {
+  if (config.proxyUrl && oldRowIndex) {
     try {
       await fetch(`${(config.proxyUrl||"").replace(/\/$/,"")}/sheets`, {
         method: "POST",
@@ -737,9 +788,11 @@ async function updateRecord(i) {
       });
       showToast("Updated in Sheets ✓");
     } catch(err) {
-      showToast("Updated locally — Sheets sync failed", true);
+      addPending({action: "update", rowIndex: oldRowIndex, data});
+      showToast("Updated locally — will sync when online", true);
     }
   } else {
+    addPending({action: "update", rowIndex: oldRowIndex, data});
     showToast("Updated locally");
   }
   // Reset save button
