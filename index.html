@@ -661,13 +661,15 @@ function clearForm() {
 }
 
 async function syncFromSheets() {
-  if (!config.url) { showToast("No Sheets URL configured", true); return; }
+  const proxyUrl = (config.proxyUrl || "").replace(/\/$/, "");
+  if (!proxyUrl) { showToast("No proxy URL configured — go to Setup tab", true); return; }
   const btn = document.getElementById("sync-btn");
   btn.disabled = true; btn.textContent = "Syncing...";
   try {
-    const res = await fetch(`${config.url}?action=list`);
+    const res = await fetch(`${proxyUrl}/sync`);
+    if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
     const data = await res.json();
-    if (data.status !== "ok") throw new Error(data.message);
+    if (data.status !== "ok") throw new Error(data.message || "Sync failed");
     records = data.records;
     localStorage.setItem("chem_db_records", JSON.stringify(records));
     document.getElementById("rec-count").textContent = records.length;
